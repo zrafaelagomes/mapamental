@@ -1,0 +1,686 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Mapa Mental — Epidemiologia & PBE</title>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+ 
+    body {
+      background: #04080f;
+      font-family: 'Outfit', sans-serif;
+      overflow: hidden;
+      width: 100vw;
+      height: 100vh;
+    }
+ 
+    /* ── header ── */
+    #header {
+      position: fixed;
+      top: 0; left: 0; right: 0;
+      z-index: 100;
+      padding: 14px 28px;
+      background: linear-gradient(180deg, rgba(4,8,15,0.98) 0%, transparent 100%);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      pointer-events: none;
+    }
+    #header h1 {
+      font-size: 18px;
+      font-weight: 700;
+      color: #e2e8f0;
+      letter-spacing: 0.03em;
+    }
+    #header h1 span { color: #38bdf8; }
+    #header p {
+      font-size: 11px;
+      color: #475569;
+      margin-top: 2px;
+      font-style: italic;
+    }
+    #hints {
+      font-size: 11px;
+      color: #475569;
+      text-align: right;
+      line-height: 1.6;
+    }
+ 
+    /* ── canvas ── */
+    #canvas {
+      width: 100vw;
+      height: 100vh;
+      cursor: grab;
+      display: block;
+    }
+    #canvas:active { cursor: grabbing; }
+ 
+    /* ── tooltip ── */
+    #tooltip {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(10,18,35,0.97);
+      border-radius: 14px;
+      padding: 16px 24px;
+      max-width: 460px;
+      width: calc(100vw - 48px);
+      pointer-events: none;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      z-index: 200;
+    }
+    #tooltip.visible { opacity: 1; }
+    #tooltip .tip-title {
+      font-size: 14px;
+      font-weight: 700;
+      margin-bottom: 8px;
+    }
+    #tooltip .tip-desc {
+      font-size: 12px;
+      color: #cbd5e1;
+      line-height: 1.7;
+    }
+ 
+    /* ── zoom controls ── */
+    #zoom {
+      position: fixed;
+      bottom: 28px;
+      right: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+      z-index: 100;
+    }
+    #zoom button {
+      width: 38px;
+      height: 38px;
+      background: rgba(15,23,42,0.95);
+      border: 1px solid rgba(56,189,248,0.25);
+      border-radius: 10px;
+      color: #94a3b8;
+      font-size: 16px;
+      cursor: pointer;
+      transition: all 0.15s;
+      font-family: 'Outfit', sans-serif;
+    }
+    #zoom button:hover { background: rgba(56,189,248,0.15); color: #38bdf8; }
+ 
+    /* ── legend ── */
+    #legend {
+      position: fixed;
+      bottom: 28px;
+      left: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 7px;
+      z-index: 100;
+    }
+    .leg-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .leg-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .leg-label {
+      font-size: 11px;
+      color: #94a3b8;
+    }
+  </style>
+</head>
+<body>
+ 
+  <div id="header">
+    <div>
+      <h1>Mapa Mental — <span>Epidemiologia & PBE</span></h1>
+      <p>Pós-Graduação em Fisioterapia</p>
+    </div>
+    <div id="hints">
+      Clique nos ramos para expandir<br>
+      Passe o mouse nos nós para detalhes<br>
+      Scroll para zoom · Arraste para mover
+    </div>
+  </div>
+ 
+  <canvas id="canvas"></canvas>
+ 
+  <div id="tooltip">
+    <div class="tip-title" id="tip-title"></div>
+    <div class="tip-desc"  id="tip-desc"></div>
+  </div>
+ 
+  <div id="zoom">
+    <button onclick="zoom(1.2)">+</button>
+    <button onclick="resetView()">⌂</button>
+    <button onclick="zoom(0.8)">−</button>
+  </div>
+ 
+  <div id="legend"></div>
+ 
+<script>
+  // ── Configurações e dados do mapa mental ──
+  const config = {
+    nodeRadius: 20,
+    fontSize: 12,
+    colors: {
+      root: '#38bdf8',
+      branch: '#60a5fa',
+      leaf: '#93c5fd',
+      text: '#e2e8f0',
+      line: '#94a3b8'
+    }
+  };
+ 
+  const mindMapData = {
+    title: 'Epidemiologia & PBE',
+    description: 'Visão geral dos conceitos-chave em Epidemiologia e Prática Baseada em Evidências.',
+    children: [
+      {
+        title: 'Epidemiologia',
+        description: 'Estudo da distribuição e determinantes de doenças em populações.',
+        children: [
+          { title: 'Incidência', description: 'Número de casos novos em um período específico.' },
+          { title: 'Prevalência', description: 'Número total de casos em um ponto no tempo.' },
+          { title: 'Fatores de Risco', description: 'Características que aumentam a probabilidade de desenvolver uma doença.' }
+        ]
+      },
+      {
+        title: 'Prática Baseada em Evidências (PBE)',
+        description: 'Integração da melhor evidência disponível com a experiência clínica e os valores do paciente.',
+        children: [
+          { title: 'Níveis de Evidência', description: 'Hierarquia que classifica a qualidade da evidência científica.' },
+          { title: 'Revisões Sistemáticas', description: 'Síntese rigorosa de estudos sobre uma questão específica.' },
+          { title: 'Ensaios Clínicos Randomizados', description: 'Estudo experimental para avaliar a eficácia de intervenções.' }
+        ]
+      }
+    ]
+  };
+
+  const BRANCHES = [
+  {
+    id: 'vieses',
+    label: ['VIESES', 'COGNITIVOS'],
+    color: '#1d3461', edge: '#3b82f6', angle: 90,
+    children: [
+      { label: ['Tendência', 'Cognitiva'],     color:'#1d3461', edge:'#60a5fa', desc:'Padrões previsíveis de pensamento e comportamento (autoimagem positiva).' },
+      { label: ['Falácias', 'Lógicas'],        color:'#1d3461', edge:'#60a5fa', desc:'Conclusão sem detalhes — falta de informação ou pensamento "desejoso".' },
+      { label: ['Heurística'],                  color:'#1d3461', edge:'#93c5fd', desc:'Atalhos mentais para resolver problemas comuns.' },
+      { label: ['Viés da', 'Confirmação'],      color:'#1d3461', edge:'#93c5fd', desc:'Você presta atenção apenas ao que confirma suas crenças e ignora o que as desafia.' },
+      { label: ['SPIN do', 'Autor'],            color:'#1d3461', edge:'#bfdbfe', desc:'Deturpar resultados para enfatizar efeito benéfico mesmo sem dados suficientes. Objetivo ≠ Conclusão.' },
+    ]
+  },
+  {
+    id: 'piramide',
+    label: ['PIRÂMIDE DE', 'EVIDÊNCIAS'],
+    color: '#052e16', edge: '#22c55e', angle: 18,
+    children: [
+      { label: ['Revisões', 'Sistemáticas'],        color:'#052e16', edge:'#4ade80', desc:'Maior nível de evidência. Síntese rigorosa de múltiplos estudos com método definido.' },
+      { label: ['Ensaios Clínicos', 'Randomizados'], color:'#052e16', edge:'#4ade80', desc:'Padrão-ouro para intervenções. Alta validade interna. Pesquisador aloca participantes.' },
+      { label: ['Estudos', 'de Coorte'],             color:'#052e16', edge:'#86efac', desc:'Acompanhamento prospectivo de grupos classificados pelo grau de exposição.' },
+      { label: ['Estudos', 'Caso-Controle'],         color:'#052e16', edge:'#86efac', desc:'Retrospectivo. Compara doentes e não-doentes para identificar exposição passada.' },
+      { label: ['Relato de Caso', '/ Expert'],       color:'#052e16', edge:'#bbf7d0', desc:'Menor nível de evidência. Casos individuais, séries ou opiniões sem dados primários.' },
+    ]
+  },
+  {
+    id: 'estudos',
+    label: ['TIPOS DE', 'ESTUDOS'],
+    color: '#431407', edge: '#f97316', angle: -54,
+    children: [
+      { label: ['Estudo', 'Ecológico'],       color:'#431407', edge:'#fb923c', desc:'Agregado + Transversal. Verifica padrão de ocorrência, gera hipóteses e avalia impacto de intervenções.' },
+      { label: ['Séries', 'Temporais'],       color:'#431407', edge:'#fb923c', desc:'Agregado + Longitudinal. Observa tendências de dados populacionais ao longo do tempo.' },
+      { label: ['Estudo', 'Transversal'],     color:'#431407', edge:'#fdba74', desc:'"Fotografia" da saúde. Avalia exposição e doença simultaneamente. Inquérito ou Survey.' },
+      { label: ['Estudo', 'de Coorte'],       color:'#431407', edge:'#fdba74', desc:'Individuado + Longitudinal + Observacional. Parte de sadios e acompanha no tempo.' },
+      { label: ['Ensaio', 'Clínico'],         color:'#431407', edge:'#fed7aa', desc:'Individuado + Intervenção. Pesquisador manipula a exposição. Profilático ou terapêutico.' },
+    ]
+  },
+  {
+    id: 'leitura',
+    label: ['LEITURA', 'CRÍTICA'],
+    color: '#2e1065', edge: '#a855f7', angle: -126,
+    children: [
+      { label: ['6 Perguntas', 'Classificação'], color:'#2e1065', edge:'#c084fc', desc:'Primário ou Secundário? Clínico/Experimental/Revisão? Individuado/Agregado? Observacional/Intervencional? Transversal/Longitudinal? Prospectivo/Retrospectivo?' },
+      { label: ['Leitura', 'Completa'],           color:'#2e1065', edge:'#c084fc', desc:'1. Objetivos: método é adequado? 2. Métodos: fontes de vieses. 3. Resultados: interpretação correta.' },
+      { label: ['Erros', 'Sistemáticos'],         color:'#2e1065', edge:'#d8b4fe', desc:'Vieses que desviam resultados em direção consistente. Relacionados ao método do estudo.' },
+      { label: ['Erros', 'Aleatórios'],           color:'#2e1065', edge:'#d8b4fe', desc:'Variações por acaso. Minimizados com tamanho amostral adequado.' },
+      { label: ['Postura', 'Crítica'],            color:'#2e1065', edge:'#ede9fe', desc:'Ler buscando ERROS, não acertos! Questionar objetivo vs. conclusão do autor.' },
+    ]
+  },
+  {
+    id: 'pbe',
+    label: ['PBE / MBE'],
+    color: '#4a044e', edge: '#e879f9', angle: 162,
+    children: [
+      { label: ['3 Pilares', 'da PBE'],      color:'#4a044e', edge:'#f0abfc', desc:'Evidência Científica + Experiência Profissional + Preferências do Paciente.' },
+      { label: ['Por que', 'Evidências?'],   color:'#4a044e', edge:'#f0abfc', desc:'Informações falsas, prática clínica passada de geração em geração, profissionais sem criticidade, terceirização do conhecimento.' },
+      { label: ['Tomada de', 'Decisão'],     color:'#4a044e', edge:'#f5d0fe', desc:'Senso crítico + vivência profissional + expertise clínica. Formação responsável, ética e permanente.' },
+      { label: ['PICO / MeSH', '/ DeCS'],   color:'#4a044e', edge:'#f5d0fe', desc:'Vocabulário controlado para busca em bases científicas. Inglês = melhor recuperação de resultados.' },
+      { label: ['MBE → PBE', 'Expansão'],   color:'#4a044e', edge:'#fae8ff', desc:'Fisioterapia e Enfermagem baseadas em evidências. Transformação no pensar do profissional de saúde.' },
+    ]
+  },
+];
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// CANVAS SETUP
+// ─────────────────────────────────────────────────────────────────────────────
+const cvs = document.getElementById('canvas');
+const ctx = cvs.getContext('2d');
+ 
+let W, H, cx, cy;
+let scale = 1, panX = 0, panY = 0;
+let activeBranch = null;
+let hoveredNode  = null;
+let isDragging   = false, dragStartX, dragStartY, panStartX, panStartY;
+ 
+const BR = 230;  // branch radius
+const CR = 165;  // child radius from branch
+ 
+function resize() {
+  W = cvs.width  = window.innerWidth;
+  H = cvs.height = window.innerHeight;
+  cx = W / 2;
+  cy = H / 2;
+  draw();
+}
+window.addEventListener('resize', resize);
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// GEOMETRY
+// ─────────────────────────────────────────────────────────────────────────────
+function toRad(d) { return d * Math.PI / 180; }
+ 
+function branchPos(b) {
+  return {
+    x: cx + panX + BR * scale * Math.cos(toRad(b.angle)),
+    y: cy + panY + BR * scale * Math.sin(toRad(b.angle))
+  };
+}
+ 
+function childPos(b, i) {
+  const n = b.children.length;
+  const spread = Math.min(60, (n - 1) * 17);
+  const off = n > 1 ? -spread + i * (spread * 2 / (n - 1)) : 0;
+  const ang = toRad(b.angle + off);
+  const bp  = branchPos(b);
+  return {
+    x: bp.x + CR * scale * Math.cos(ang),
+    y: bp.y + CR * scale * Math.sin(ang),
+  };
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// DRAW HELPERS
+// ─────────────────────────────────────────────────────────────────────────────
+function drawCurve(x1, y1, x2, y2, color, lw, alpha) {
+  ctx.save();
+  ctx.globalAlpha = alpha;
+  ctx.strokeStyle = color;
+  ctx.lineWidth   = lw;
+  ctx.lineCap     = 'round';
+  const c1x = x1 + (x2-x1)*0.4, c1y = y1 + (y2-y1)*0.05;
+  const c2x = x1 + (x2-x1)*0.6, c2y = y1 + (y2-y1)*0.95;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.bezierCurveTo(c1x, c1y, c2x, c2y, x2, y2);
+  ctx.stroke();
+  ctx.restore();
+}
+ 
+function roundRect(x, y, w, h, r, fillColor, strokeColor, strokeW) {
+  ctx.save();
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fillStyle   = fillColor;
+  ctx.fill();
+  ctx.strokeStyle = strokeColor;
+  ctx.lineWidth   = strokeW;
+  ctx.stroke();
+  ctx.restore();
+}
+ 
+function drawNode(nx, ny, lines, w, h, fillColor, strokeColor, fontSize, bold, glow) {
+  const s = scale;
+  const bw = w * s, bh = h * s, rad = 14 * s;
+  if (glow) {
+    ctx.save();
+    ctx.shadowColor  = strokeColor;
+    ctx.shadowBlur   = 18 * s;
+    roundRect(nx - bw/2, ny - bh/2, bw, bh, rad, fillColor, strokeColor, 2.5*s);
+    ctx.restore();
+  }
+  roundRect(nx - bw/2, ny - bh/2, bw, bh, rad, fillColor, strokeColor, 2.2*s);
+ 
+  ctx.save();
+  ctx.fillStyle  = '#ffffff';
+  ctx.font       = `${bold?'700':'500'} ${fontSize*s}px 'Outfit', sans-serif`;
+  ctx.textAlign  = 'center';
+  ctx.textBaseline = 'middle';
+  const lh = fontSize * s * 1.35;
+  const startY = ny - (lines.length - 1) * lh / 2;
+  lines.forEach((line, i) => {
+    ctx.fillText(line, nx, startY + i * lh);
+  });
+  ctx.restore();
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// DOT GRID BACKGROUND
+// ─────────────────────────────────────────────────────────────────────────────
+function drawGrid() {
+  const step = 36;
+  ctx.fillStyle = '#1a2540';
+  for (let x = (panX % step + step) % step; x < W; x += step) {
+    for (let y = (panY % step + step) % step; y < H; y += step) {
+      ctx.beginPath();
+      ctx.arc(x, y, 1.2, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAIN DRAW
+// ─────────────────────────────────────────────────────────────────────────────
+function draw() {
+  ctx.clearRect(0, 0, W, H);
+  ctx.fillStyle = '#04080f';
+  ctx.fillRect(0, 0, W, H);
+ 
+  drawGrid();
+ 
+  // center glow
+  const grd = ctx.createRadialGradient(cx+panX, cy+panY, 0, cx+panX, cy+panY, 300*scale);
+  grd.addColorStop(0,   'rgba(56,189,248,0.07)');
+  grd.addColorStop(1,   'rgba(56,189,248,0)');
+  ctx.fillStyle = grd;
+  ctx.beginPath();
+  ctx.arc(cx+panX, cy+panY, 300*scale, 0, Math.PI*2);
+  ctx.fill();
+ 
+  // lines center → branch
+  BRANCHES.forEach(b => {
+    const bp = branchPos(b);
+    const active = activeBranch === b.id;
+    drawCurve(cx+panX, cy+panY, bp.x, bp.y, b.edge, (active?3.5:1.8)*scale, active?0.7:0.35);
+  });
+ 
+  // lines branch → children
+  BRANCHES.forEach(b => {
+    if (activeBranch !== b.id) return;
+    const bp = branchPos(b);
+    b.children.forEach((_, i) => {
+      const cp = childPos(b, i);
+      drawCurve(bp.x, bp.y, cp.x, cp.y, b.children[i].edge, 1.8*scale, 0.6);
+    });
+  });
+ 
+  // child nodes
+  BRANCHES.forEach(b => {
+    if (activeBranch !== b.id) return;
+    b.children.forEach((ch, i) => {
+      const cp = childPos(b, i);
+      const isHov = hoveredNode && hoveredNode.id === `${b.id}-${i}`;
+      drawNode(cp.x, cp.y, ch.label, 150, ch.label.length > 1 ? 72 : 56,
+               isHov ? ch.edge + 'bb' : ch.color + 'dd',
+               ch.edge, 13, false, isHov);
+    });
+  });
+ 
+  // branch nodes
+  BRANCHES.forEach(b => {
+    const bp  = branchPos(b);
+    const act = activeBranch === b.id;
+    drawNode(bp.x, bp.y, b.label, 170, b.label.length > 1 ? 80 : 60,
+             act ? b.edge + 'cc' : b.color + 'ee',
+             b.edge, 14.5, true, act);
+  });
+ 
+  // center node
+  const ccx = cx + panX, ccy = cy + panY;
+  const cr = 75 * scale;
+  [cr+28, cr+14, cr].forEach((r, i) => {
+    ctx.save();
+    ctx.globalAlpha = [0.1, 0.2, 0.3][i];
+    ctx.strokeStyle = '#38bdf8';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    ctx.arc(ccx, ccy, r, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.restore();
+  });
+  // fill
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(ccx, ccy, cr, 0, Math.PI*2);
+  ctx.fillStyle = '#070f1e';
+  ctx.fill();
+  ctx.strokeStyle = '#38bdf8';
+  ctx.lineWidth   = 3 * scale;
+  ctx.shadowColor = '#38bdf8';
+  ctx.shadowBlur  = 20 * scale;
+  ctx.stroke();
+  ctx.restore();
+ 
+  ctx.save();
+  ctx.textAlign     = 'center';
+  ctx.textBaseline  = 'middle';
+  const lines = [
+    { text: 'PRÁTICA BASEADA',  y: -22*scale, fs: 12.5*scale, color: '#38bdf8', w: 700 },
+    { text: 'EM EVIDÊNCIAS',    y:  -6*scale, fs: 12.5*scale, color: '#38bdf8', w: 700 },
+    { text: 'Epidemiologia',    y:  11*scale, fs: 10.5*scale, color: '#94a3b8', w: 400, italic: true },
+    { text: '& MBE',            y:  26*scale, fs: 10.5*scale, color: '#94a3b8', w: 400, italic: true },
+    { text: '— — —',            y:  44*scale, fs:  9.0*scale, color: '#38bdf8', w: 400 },
+  ];
+  lines.forEach(l => {
+    ctx.font = `${l.italic?'italic ':''} ${l.w} ${l.fs}px 'Outfit', sans-serif`;
+    ctx.fillStyle = l.color;
+    ctx.fillText(l.text, ccx, ccy + l.y);
+  });
+  ctx.restore();
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// HIT TESTING
+// ─────────────────────────────────────────────────────────────────────────────
+function hitTest(mx, my) {
+  // check branch nodes
+  for (const b of BRANCHES) {
+    const bp = branchPos(b);
+    const bw = 170*scale, bh = (b.label.length > 1 ? 80 : 60)*scale;
+    if (mx >= bp.x - bw/2 && mx <= bp.x + bw/2 &&
+        my >= bp.y - bh/2 && my <= bp.y + bh/2) {
+      return { type: 'branch', branch: b };
+    }
+  }
+  // check child nodes
+  if (activeBranch) {
+    const ab = BRANCHES.find(b => b.id === activeBranch);
+    if (ab) {
+      for (let i = 0; i < ab.children.length; i++) {
+        const cp = childPos(ab, i);
+        const ch = ab.children[i];
+        const bw = 150*scale, bh = (ch.label.length > 1 ? 72 : 56)*scale;
+        if (mx >= cp.x - bw/2 && mx <= cp.x + bw/2 &&
+            my >= cp.y - bh/2 && my <= cp.y + bh/2) {
+          return { type: 'child', branch: ab, child: ch, idx: i };
+        }
+      }
+    }
+  }
+  return null;
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// TOOLTIP
+// ─────────────────────────────────────────────────────────────────────────────
+const tooltip  = document.getElementById('tooltip');
+const tipTitle = document.getElementById('tip-title');
+const tipDesc  = document.getElementById('tip-desc');
+ 
+function showTip(color, title, desc) {
+  tipTitle.style.color = color;
+  tipTitle.textContent = title;
+  tipDesc.textContent  = desc;
+  tooltip.style.borderColor = color;
+  tooltip.style.boxShadow   = `0 0 30px ${color}44, 0 8px 32px rgba(0,0,0,0.7)`;
+  tooltip.classList.add('visible');
+}
+function hideTip() { tooltip.classList.remove('visible'); }
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// EVENTS
+// ─────────────────────────────────────────────────────────────────────────────
+cvs.addEventListener('mousedown', e => {
+  isDragging  = true;
+  dragStartX  = e.clientX;
+  dragStartY  = e.clientY;
+  panStartX   = panX;
+  panStartY   = panY;
+});
+ 
+cvs.addEventListener('mousemove', e => {
+  if (isDragging) {
+    panX = panStartX + (e.clientX - dragStartX);
+    panY = panStartY + (e.clientY - dragStartY);
+    draw();
+    return;
+  }
+  const hit = hitTest(e.clientX, e.clientY);
+  if (hit && hit.type === 'child') {
+    hoveredNode = { id: `${hit.branch.id}-${hit.idx}` };
+    showTip(hit.child.edge, hit.child.label.join(' '), hit.child.desc);
+  } else {
+    hoveredNode = null;
+    hideTip();
+  }
+  cvs.style.cursor = hit ? 'pointer' : 'grab';
+  draw();
+});
+ 
+cvs.addEventListener('mouseup', e => {
+  const dist = Math.hypot(e.clientX - dragStartX, e.clientY - dragStartY);
+  isDragging = false;
+  if (dist > 5) return; // was a drag, not a click
+ 
+  const hit = hitTest(e.clientX, e.clientY);
+  if (hit && hit.type === 'branch') {
+    activeBranch = activeBranch === hit.branch.id ? null : hit.branch.id;
+    draw();
+  }
+});
+ 
+cvs.addEventListener('mouseleave', () => {
+  isDragging = false;
+});
+ 
+cvs.addEventListener('wheel', e => {
+  e.preventDefault();
+  const factor = e.deltaY < 0 ? 1.12 : 0.88;
+  scale = Math.min(2.5, Math.max(0.35, scale * factor));
+  draw();
+}, { passive: false });
+ 
+// touch support
+let lastTouchDist = null;
+cvs.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    isDragging = true;
+    dragStartX = e.touches[0].clientX;
+    dragStartY = e.touches[0].clientY;
+    panStartX  = panX;
+    panStartY  = panY;
+  }
+  if (e.touches.length === 2) {
+    lastTouchDist = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+  }
+}, { passive: true });
+ 
+cvs.addEventListener('touchmove', e => {
+  if (e.touches.length === 1 && isDragging) {
+    panX = panStartX + (e.touches[0].clientX - dragStartX);
+    panY = panStartY + (e.touches[0].clientY - dragStartY);
+    draw();
+  }
+  if (e.touches.length === 2 && lastTouchDist) {
+    const d = Math.hypot(
+      e.touches[0].clientX - e.touches[1].clientX,
+      e.touches[0].clientY - e.touches[1].clientY
+    );
+    scale = Math.min(2.5, Math.max(0.35, scale * (d / lastTouchDist)));
+    lastTouchDist = d;
+    draw();
+  }
+}, { passive: true });
+ 
+cvs.addEventListener('touchend', e => {
+  if (e.changedTouches.length === 1) {
+    const dist = Math.hypot(
+      e.changedTouches[0].clientX - dragStartX,
+      e.changedTouches[0].clientY - dragStartY
+    );
+    isDragging = false;
+    if (dist < 8) {
+      const hit = hitTest(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
+      if (hit && hit.type === 'branch') {
+        activeBranch = activeBranch === hit.branch.id ? null : hit.branch.id;
+        draw();
+      }
+      if (hit && hit.type === 'child') {
+        showTip(hit.child.edge, hit.child.label.join(' '), hit.child.desc);
+      }
+    }
+  }
+  lastTouchDist = null;
+}, { passive: true });
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// ZOOM CONTROLS
+// ─────────────────────────────────────────────────────────────────────────────
+function zoom(f) {
+  scale = Math.min(2.5, Math.max(0.35, scale * f));
+  draw();
+}
+function resetView() {
+  scale = 1; panX = 0; panY = 0;
+  draw();
+}
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// LEGEND
+// ─────────────────────────────────────────────────────────────────────────────
+const legendEl = document.getElementById('legend');
+BRANCHES.forEach(b => {
+  const item = document.createElement('div');
+  item.className = 'leg-item';
+  item.innerHTML = `
+    <div class="leg-dot" style="background:${b.edge}; box-shadow: 0 0 6px ${b.edge}"></div>
+    <span class="leg-label">${b.label.join(' ')}</span>
+  `;
+  legendEl.appendChild(item);
+});
+ 
+// ─────────────────────────────────────────────────────────────────────────────
+// INIT
+// ─────────────────────────────────────────────────────────────────────────────
+resize();
+</script>
+</body>
+</html>
